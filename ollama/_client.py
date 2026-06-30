@@ -664,6 +664,20 @@ class Client(BaseClient):
       ).model_dump(exclude_none=True),
     )
 
+  def exists(self, model: str) -> bool:
+    """
+    Returns True if the model exists, False if it does not.
+
+    Raises `ResponseError` for errors other than 404.
+    """
+    try:
+      self.show(model)
+      return True
+    except ResponseError as e:
+      if e.status_code == 404:
+        return False
+      raise
+
   def ps(self) -> ProcessResponse:
     return self._request(
       ProcessResponse,
@@ -1304,6 +1318,20 @@ class AsyncClient(BaseClient):
         model=model,
       ).model_dump(exclude_none=True),
     )
+
+  async def exists(self, model: str) -> bool:
+    """
+    Returns True if the model exists, False if it does not.
+
+    Raises `ResponseError` for errors other than 404.
+    """
+    try:
+      await self.show(model)
+      return True
+    except ResponseError as e:
+      if e.status_code == 404:
+        return False
+      raise
 
   async def ps(self) -> ProcessResponse:
     return await self._request(

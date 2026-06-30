@@ -13,7 +13,7 @@ from pytest_httpserver import HTTPServer, URIPattern
 from werkzeug.wrappers import Request, Response
 
 from ollama._client import CONNECTION_ERROR_MESSAGE, AsyncClient, Client, _copy_tools
-from ollama._types import Image, Message
+from ollama._types import Image, Message, ResponseError
 
 PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC'
 PNG_BYTES = base64.b64decode(PNG_BASE64)
@@ -879,6 +879,55 @@ def test_client_copy(httpserver: HTTPServer):
   assert response['status'] == 'success'
 
 
+def test_client_exists_true(httpserver: HTTPServer):
+  httpserver.expect_ordered_request(
+    '/api/show',
+    method='POST',
+    json={'model': 'llama3.2'},
+  ).respond_with_json(
+    {
+      'modelfile': '# Modelfile',
+      'template': '{{ .Prompt }}',
+    }
+  )
+
+  client = Client(httpserver.url_for('/'))
+  assert client.exists('llama3.2') is True
+
+
+def test_client_exists_false(httpserver: HTTPServer):
+  httpserver.expect_ordered_request(
+    '/api/show',
+    method='POST',
+    json={'model': 'missing-model'},
+  ).respond_with_json({'error': 'model not found'}, status=404)
+
+  client = Client(httpserver.url_for('/'))
+  assert client.exists('missing-model') is False
+
+
+def test_client_exists_raises_on_non_404_error(httpserver: HTTPServer):
+  httpserver.expect_ordered_request(
+    '/api/show',
+    method='POST',
+    json={'model': 'broken-model'},
+  ).respond_with_json({'error': 'internal server error'}, status=500)
+
+  client = Client(httpserver.url_for('/'))
+  with pytest.raises(ResponseError) as exc_info:
+    client.exists('broken-model')
+
+  assert exc_info.value.status_code == 500
+  assert exc_info.value.error == 'internal server error'
+
+
+def test_client_exists_raises_on_connection_error():
+  client = Client('http://localhost:1234')
+
+  with pytest.raises(ConnectionError, match=CONNECTION_ERROR_MESSAGE):
+    client.exists('model')
+
+
 async def test_async_client_chat(httpserver: HTTPServer):
   httpserver.expect_ordered_request(
     '/api/chat',
@@ -1254,6 +1303,57 @@ async def test_async_client_copy(httpserver: HTTPServer):
   client = AsyncClient(httpserver.url_for('/api/copy'))
   response = await client.copy('dum', 'dummer')
   assert response['status'] == 'success'
+
+
+async def test_async_client_exists_true(httpserver: HTTPServer):
+  httpserver.expect_ordered_request(
+    '/api/show',
+    method='POST',
+    json={'model': 'llama3.2'},
+  ).respond_with_json(
+    {
+      'modelfile': '# Modelfile',
+      'template': '{{ .Prompt }}',
+    }
+  )
+
+  client = AsyncClient(httpserver.url_for('/'))
+  assert await client.exists('llama3.2') is True
+
+
+async def test_async_client_exists_false(httpserver: HTTPServer):
+  httpserver.expect_ordered_request(
+    '/api/show',
+    method='POST',
+    json={'model': 'missing-model'},
+  ).respond_with_json({'error': 'model not found'}, status=404)
+
+  client = AsyncClient(httpserver.url_for('/'))
+  assert await client.exists('missing-model') is False
+
+
+async def test_async_client_exists_raises_on_non_404_error(httpserver: HTTPServer):
+  httpserver.expect_ordered_request(
+    '/api/show',
+    method='POST',
+    json={'model': 'broken-model'},
+  ).respond_with_json({'error': 'internal server error'}, status=500)
+
+  client = AsyncClient(httpserver.url_for('/'))
+  with pytest.raises(ResponseError) as exc_info:
+    await client.exists('broken-model')
+
+  assert exc_info.value.status_code == 500
+  assert exc_info.value.error == 'internal server error'
+
+
+async def test_async_client_exists_raises_on_connection_error():
+  client = AsyncClient('http://localhost:1234')
+
+  with pytest.raises(ConnectionError) as exc_info:
+    await client.exists('model')
+
+  assert str(exc_info.value) == CONNECTION_ERROR_MESSAGE
 
 
 def test_headers():
